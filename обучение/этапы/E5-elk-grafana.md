@@ -1,42 +1,54 @@
 # E5. ELK и Grafana: увидеть инвариант
 
-**Задачи:** T5.1–T5.3 · **~4 ч** · [S13](../сценарии.md#s13-sold-out-не-ошибка-инфраструктуры), [S14](../сценарии.md#s14-цепочка-логов-по-order_id)
+**Задачи:** T5.1–T5.3 · **~3 ч** · [S13](../сценарии.md#s13-sold-out-не-ошибка-инфраструктуры), [S14](../сценарии.md#s14-цепочка-логов-по-order_id)
 
 ## Зачем это учим
 
-У вас был Graylog + Mongo + OpenSearch. Здесь цель — **тот же навык на ELK**: собрать инцидент по `order_id` и не путать бизнес-отказ с падением.
+У вас был Graylog + Mongo + OpenSearch. Здесь тот же навык на ELK: собрать инцидент по `order_id` и не путать бизнес-отказ с падением.
 
-Метрики (Grafana) отвечают «сколько». Логи (Kibana) — «почему этот заказ».
+Метрики отвечают «сколько». Логи — «почему этот заказ». Каркас логов Shop живёт с E0; здесь — template, saved search, Prometheus, дашборд.
+
+## Сущности и значения
+
+| Что вводим | Смысл | Дефолт | Где пригодится |
+| --- | --- | --- | --- |
+| index template `shop-*` | поля keyword, не «то text то keyword» | | гонки S3/S9 |
+| панель 2xx / 409 / 5xx | 409 ≠ авария | | S13 |
+| `keys_available` | остаток пула глазами | | шторм → 0 |
+| `ledger_imbalance` | должен быть 0 | алерт всегда | P2 на paid сразу виден |
+| корреляция `order_id`,`event_id`,`request_id` | собрать S6 | | запись в записку |
 
 ## Что должно щёлкнуть
 
-- Дашборд, где sold out = 5xx, **врёт** и учит плохим алертам.
-- Корреляция: без `event_id`/`request_id` S6 не доказать.
-- Index template сейчас избавит от «поле то keyword то text» на гонках.
+- Дашборд, где sold out = 5xx, врёт.
+- Без request_id S6 не доказать.
 
 ## Сделать
 
-Template `shop-*`, saved search, Grafana: статусы, keys_available, 2xx/409/5xx, ledger_imbalance. Прогнать S9 и смотреть глазами, не SQL.
+Template, Kibana search, Grafana в `deploy/grafana`, прогон S9 глазами (не только SQL).
 
 ## Проверить
 
-S14 на одном happy path. Повторить S6 и найти оба issue. S13: error rate не следует за out_of_stock.
+S14 на happy path. Повторить S6 — два issue. S13: error rate не следует за OOS.
 
-## Разобрать
+## Разбор после прогона
 
-- P16 OOS как Error  
-- P17 логи без корреляции  
-- Сравнение с Graylog: stream vs index, pipeline Logstash vs extractors  
+P16, P17. Сравнение с Graylog.
 
-Вопросы себе:
+| Вопрос | Ответ |
+| --- | --- |
+| Какой запрос в Kibana докажет S3 (50 webhook, 1 issue)? | |
+| Какой panel загорится при P2 (settlement на paid)? | |
+| Что алертить всегда vs порог: imbalance vs out_of_stock? | |
 
-1. Какой запрос в Kibana докажет S3 (50 webhook, 1 issue)?
-2. Какой panel в Grafana загорится при P2 (settlement на paid)?
-3. Что алертить: imbalance ≠ 0 всегда; out_of_stock — порог, не page on-call?
+Наблюдение:
+
+```
+```
 
 ## Антипаттерн ИИ
 
-Тянуть весь ELK-кластер на 3 ноды. Для учёбы хватает однонодового ES.
+Кластер ES на 3 ноды. Для учёбы хватает однонодового, heap 1 GB.
 
 ## Дальше
 
