@@ -23,8 +23,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - Заказ: `POST /orders` `{ "sku": "STEAM-TOPUP-500" }` → `created`
 - PostgreSQL (DBeaver / локальный `dotnet run`): `localhost:5433`, БД/user/password `shop` (внутри compose сервис слушает `:5432`)
 - Kibana: http://localhost:5601 — Data View `shop-*`, фильтр `service: shop`
-- API docs (curl / ссылки): [Api docs/API DOCS.md](Api%20docs/API%20DOCS.md) — обновлять при смене эндпоинтов
-- Postman: импорт [postman/](postman/)
+- API docs (тела + ссылки): [Api docs/API DOCS.md](Api%20docs/API%20DOCS.md) — обновлять при смене эндпоинтов
 - Тесты: `dotnet test DigitalGoodsShop.sln`
 
 Полная инструкция «с нуля за 15 минут» — этап E7.

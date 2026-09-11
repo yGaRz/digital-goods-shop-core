@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 using Shop.Domain;
 using Shop.Infrastructure.Persistence;
 
@@ -59,6 +60,13 @@ public static class OrdersEndpoints
         var order = Order.CreateFromProduct(product, DateTimeOffset.UtcNow);
         db.Orders.Add(order);
         await db.SaveChangesAsync(cancellationToken);
+
+        Log.Information(
+            "Shop order created {OrderId} sku {Sku} amount {Amount} status {Status}",
+            order.Id,
+            order.Sku,
+            order.Amount,
+            order.Status);
 
         return Results.Created($"/orders/{order.Id}", OrderResponse.From(order));
     }

@@ -1,12 +1,10 @@
 # API docs (локальный compose)
 
-**Канон ручных запросов.** Меняешь REST (путь, метод, тело, код ответа, новый сервис в compose) — в **том же изменении** обновляй этот файл: описание, копируемое тело, ссылка с хоста. Параллельно: [АРХИТЕКТУРА.md](../АРХИТЕКТУРА.md) §4 (контракт) и при необходимости JSON в [postman/](../postman/).
+**Канон ручных запросов.** Меняешь REST (путь, метод, тело, код ответа, новый сервис в compose) — в **том же изменении** обновляй этот файл: описание, копируемое тело, ссылка с хоста. Параллельно: [АРХИТЕКТУРА.md](../АРХИТЕКТУРА.md) §4 (контракт).
 
-Стек: [deploy/docker-compose.yml](../deploy/docker-compose.yml).  
-Коллекция: [DigitalGoodsShop.postman_collection.json](../postman/DigitalGoodsShop.postman_collection.json).  
-Environment: [local.postman_environment.json](../postman/local.postman_environment.json) (`shopUrl`, `orderId`).
+Стек: [deploy/docker-compose.yml](../deploy/docker-compose.yml).
 
-Документ растёт вместе с этапами. Сейчас — **E0 + E1a** (только Shop).
+Документ растёт вместе с этапами. Сейчас — **E0 + E1a + E1b** (Shop + тонкий Buyer).
 
 ## Поднять
 
@@ -20,24 +18,13 @@ docker compose -f deploy/docker-compose.yml up --build -d
 | --- | --- | --- |
 | Shop API | [http://localhost:8080](http://localhost:8080) | заказы, health, каталог |
 | Shop health | [http://localhost:8080/health](http://localhost:8080/health) | Postgres доступен → 200 |
+| Buyer API | [http://localhost:8081](http://localhost:8081) | одна покупка → заказ в Shop |
+| Buyer health | [http://localhost:8081/health](http://localhost:8081/health) | Shop доступен → 200 |
 | Каталог | [http://localhost:8080/products](http://localhost:8080/products) | 12 SKU после seed |
 | Kibana | [http://localhost:5601](http://localhost:5601) | Discover, Data View `shop-*` |
 | Elasticsearch | [http://localhost:9200](http://localhost:9200) | индексы `shop-*` |
 | Logstash TCP | `localhost:5000` | приём JSON-логов (не браузер) |
 | PostgreSQL | `localhost:5433` | user/password/db: `shop` (в контейнере порт 5432) |
-
-Переменные Postman:
-
-| Ключ | Значение по умолчанию |
-| --- | --- |
-| `shopUrl` | `http://localhost:8080` |
-| `orderId` | заполняется тестом после Create order |
-
-## Импорт Postman
-
-1. Import → [коллекция](../postman/DigitalGoodsShop.postman_collection.json) и [environment](../postman/local.postman_environment.json).
-2. В правом верхнем углу выбрать environment **local**.
-3. Папки: **Health** → **Catalog** → **Orders**.
 
 ---
 
@@ -55,10 +42,6 @@ docker compose -f deploy/docker-compose.yml up --build -d
 GET http://localhost:8080/health
 ```
 
-```powershell
-curl.exe http://localhost:8080/health
-```
-
 Ожидание: `200` и текст `Healthy`.
 
 ---
@@ -73,10 +56,6 @@ curl.exe http://localhost:8080/health
 GET http://localhost:8080/products
 ```
 
-```powershell
-curl.exe http://localhost:8080/products
-```
-
 Ожидание: JSON-массив из **12** SKU, в том числе `STEAM-TOPUP-500` с `price: 500`.
 
 ---
@@ -89,7 +68,7 @@ curl.exe http://localhost:8080/products
 - URL: [http://localhost:8080/orders](http://localhost:8080/orders)
 - Header: `Content-Type: application/json`
 
-Тело (happy path):
+Тело:
 
 ```json
 {
@@ -97,7 +76,7 @@ curl.exe http://localhost:8080/products
 }
 ```
 
-Другие SKU из каталога — та же форма, например:
+Другой SKU из каталога:
 
 ```json
 {
@@ -105,10 +84,13 @@ curl.exe http://localhost:8080/products
 }
 ```
 
-```powershell
-curl.exe -X POST http://localhost:8080/orders `
-  -H "Content-Type: application/json" `
-  -d "{\"sku\":\"STEAM-TOPUP-500\"}"
+```http
+POST http://localhost:8080/orders
+Content-Type: application/json
+
+{
+  "sku": "STEAM-TOPUP-500"
+}
 ```
 
 Ожидание: `201 Created`, например:
@@ -127,44 +109,100 @@ curl.exe -X POST http://localhost:8080/orders `
 
 Неизвестный SKU → `404` `{ "error": "unknown_sku", … }` (не 500).
 
-В Postman после успешного Create в environment пишется `orderId`.
-
 ---
 
 ### Получить заказ
 
 - Метод: `GET`
-- URL: `http://localhost:8080/orders/{id}`  
-  Пример после create: подставьте свой `id` или `{{orderId}}` в Postman.
+- URL: `http://localhost:8080/orders/{id}` — подставьте `id` из ответа create / purchase.
 
 ```http
 GET http://localhost:8080/orders/ord_06defdabc65340839ea4ff4eda58f339
-```
-
-```powershell
-curl.exe http://localhost:8080/orders/ВАШ_ORDER_ID
 ```
 
 Ожидание: `200` и тот же снимок заказа. Нет такого id → `404`.
 
 ---
 
-## Минимальный ручной сценарий E1a
+## Эндпоинты Buyer
 
-1. [Health](http://localhost:8080/health) → 200.  
-2. [Products](http://localhost:8080/products) → 12 строк.  
-3. `POST /orders` с телом `STEAM-TOPUP-500` → `created`, `amount: 500`.  
-4. `GET /orders/{id}` → тот же заказ.  
-5. (опционально) Kibana: [http://localhost:5601/app/discover](http://localhost:5601/app/discover), Data View `shop-*`, фильтр `service: shop`.
+Тонкий клиент **без своей БД**. Один `POST /purchases` = один `POST /orders` в Shop. `/storm` — только на E4b.
 
-Логи контейнера без Kibana:
+### Health
+
+Проверка: процесс жив и дотягивается до Shop `/health`. Shop недоступен → **503**.
+
+- Метод: `GET`
+- URL: [http://localhost:8081/health](http://localhost:8081/health)
+- Тело: нет
+
+```http
+GET http://localhost:8081/health
+```
+
+Ожидание: `200` и текст `Healthy`.
+
+---
+
+### Купить (один покупатель)
+
+Проксирует в Shop `POST /orders`. В ответе — `orderId` (это `orders.id` магазина). Лог Buyer: `service=buyer` + `order_id`.
+
+- Метод: `POST`
+- URL: [http://localhost:8081/purchases](http://localhost:8081/purchases)
+- Header: `Content-Type: application/json`
+
+Тело:
+
+```json
+{
+  "sku": "STEAM-TOPUP-500"
+}
+```
+
+```http
+POST http://localhost:8081/purchases
+Content-Type: application/json
+
+{
+  "sku": "STEAM-TOPUP-500"
+}
+```
+
+Ожидание: `201 Created`, например:
+
+```json
+{
+  "orderId": "ord_…",
+  "sku": "STEAM-TOPUP-500",
+  "amount": 500.00,
+  "currency": "RUB",
+  "status": "created"
+}
+```
+
+Неизвестный SKU → `404` `{ "error": "unknown_sku", … }`. Пустой `sku` → `400`.
+
+Дальше проверка заказа: `GET http://localhost:8080/orders/{orderId}`.
+
+---
+
+## Минимальный ручной сценарий E1b
+
+1. [Health shop](http://localhost:8080/health) → 200.  
+2. [Health buyer](http://localhost:8081/health) → 200.  
+3. `POST /purchases` с телом выше → `created`, `orderId`.  
+4. `GET /orders/{orderId}` на Shop → тот же заказ.  
+5. (опционально) Kibana: фильтр `service: buyer OR service: shop` и поле `order_id`.
+
+Логи без Kibana:
 
 ```powershell
-docker compose -f deploy/docker-compose.yml logs -f shop
+docker compose -f deploy/docker-compose.yml logs -f buyer shop
 ```
 
 ---
 
-## Позже (ещё нет в коллекции)
+## Позже
 
-Buyer `:8081`, Bank `:8082`, Seller A/B `:8083`/`:8084`, webhook, storm — появятся на E1b+. Этот файл дополним вместе с коллекцией.
+Bank `:8082`, Seller A/B `:8083`/`:8084`, webhook, storm — появятся на E1c+. Этот файл дополним телами и ссылками.
