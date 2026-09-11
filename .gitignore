@@ -8,6 +8,11 @@ build/
 coverage/
 .idea/
 .vscode/
+.vs/
+bin/
+obj/
+*.user
+*.suo
 graphify-out/
 *.log
 .DS_Store

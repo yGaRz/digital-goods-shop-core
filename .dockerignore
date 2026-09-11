@@ -1,0 +1,6 @@
+**/bin/
+**/obj/
+.git/
+graphify-out/
+**/.vs/
+**/node_modules/
