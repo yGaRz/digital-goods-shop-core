@@ -1,7 +1,8 @@
 using Serilog;
 using Serilog.Events;
-using Serilog.Formatting.Compact;
+using Shop.Api.Catalog;
 using Shop.Api.Logging;
+using Shop.Api.Orders;
 using Shop.Infrastructure;
 
 // Console: readable text for docker logs. Logstash: Compact JSON for Kibana.
@@ -38,12 +39,17 @@ try
     var connectionString = builder.Configuration.GetConnectionString("Shop")
         ?? throw new InvalidOperationException("ConnectionStrings:Shop is required.");
 
-    builder.Services.AddShopInfrastructure(connectionString);
+    var useInMemory = builder.Configuration.GetValue("Testing:UseInMemoryDatabase", false);
+    builder.Services.AddShopInfrastructure(connectionString, useInMemory);
 
     var app = builder.Build();
 
+    await app.Services.InitializeShopDatabaseAsync();
+
     app.UseSerilogRequestLogging();
     app.MapHealthChecks("/health");
+    app.MapProductsEndpoints();
+    app.MapOrdersEndpoints();
 
     Log.Information("Shop.Api listening on :8080");
     app.Run();
@@ -57,3 +63,5 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+public partial class Program;

@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: shop
       POSTGRES_DB: shop
     ports:
-      - "5432:5432"
+      # Host 5433: рядом может быть локальный PostgreSQL на 5432 (DBeaver / tooling).
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
