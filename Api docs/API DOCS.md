@@ -4,7 +4,7 @@
 
 Стек: [deploy/docker-compose.yml](../deploy/docker-compose.yml).
 
-Документ растёт вместе с этапами. Сейчас — **E0 + E1a + E1b** (Shop + тонкий Buyer).
+Документ растёт вместе с этапами. Сейчас — **E0–E1c** (Shop + Buyer + Bank/эскроу).
 
 ## Поднять
 
@@ -20,6 +20,8 @@ docker compose -f deploy/docker-compose.yml up --build -d
 | Shop health | [http://localhost:8080/health](http://localhost:8080/health) | Postgres доступен → 200 |
 | Buyer API | [http://localhost:8081](http://localhost:8081) | одна покупка → заказ в Shop |
 | Buyer health | [http://localhost:8081/health](http://localhost:8081/health) | Shop доступен → 200 |
+| Bank API | [http://localhost:8082](http://localhost:8082) | эмуляция эквайринга → webhook Shop |
+| Bank health | [http://localhost:8082/health](http://localhost:8082/health) | Shop доступен → 200 |
 | Каталог | [http://localhost:8080/products](http://localhost:8080/products) | 12 SKU после seed |
 | Kibana | [http://localhost:5601](http://localhost:5601) | Discover, Data View `shop-*` |
 | Elasticsearch | [http://localhost:9200](http://localhost:9200) | индексы `shop-*` |
@@ -187,22 +189,147 @@ Content-Type: application/json
 
 ---
 
-## Минимальный ручной сценарий E1b
+## Эндпоинты Shop — оплата (вебхук)
 
-1. [Health shop](http://localhost:8080/health) → 200.  
-2. [Health buyer](http://localhost:8081/health) → 200.  
-3. `POST /purchases` с телом выше → `created`, `orderId`.  
-4. `GET /orders/{orderId}` на Shop → тот же заказ.  
-5. (опционально) Kibana: фильтр `service: buyer OR service: shop` и поле `order_id`.
+Контракт как в ТЗ. Повтор того же `event_id` → **200**, без второй проводки. Чужой `amount` → **200**, статус заказа не `paid`, в логе `reason=amount_mismatch`. Заказа ещё нет → **200**, событие сохранено (`order_missing`, дожим на E2).
 
-Логи без Kibana:
+### Принять вебхук
+
+- Метод: `POST`
+- URL: [http://localhost:8080/webhook/payment](http://localhost:8080/webhook/payment)
+- Header: `Content-Type: application/json`
+
+Тело (happy path, amount = снимок заказа):
+
+```json
+{
+  "event_id": "evt_a1b2c3",
+  "order_id": "ord_…",
+  "status": "paid",
+  "amount": 500,
+  "currency": "RUB",
+  "created_at": "2026-09-11T12:00:00Z"
+}
+```
+
+Оплата не прошла (S2):
+
+```json
+{
+  "event_id": "evt_fail_1",
+  "order_id": "ord_…",
+  "status": "failed",
+  "amount": 500,
+  "currency": "RUB",
+  "created_at": "2026-09-11T12:00:00Z"
+}
+```
+
+S16 (сумма не та) — тот же `paid`, но `"amount": 1` при заказе на 1290.
+
+```http
+POST http://localhost:8080/webhook/payment
+Content-Type: application/json
+
+{
+  "event_id": "evt_a1b2c3",
+  "order_id": "ord_…",
+  "status": "paid",
+  "amount": 500,
+  "currency": "RUB",
+  "created_at": "2026-09-11T12:00:00Z"
+}
+```
+
+Ожидание `paid`: заказ `status: paid`, ledger `bank_asset`/`escrow` = amount, `seller_payable` = 0, ключа нет.  
+Ожидание `failed`: `payment_failed`, ledger пуст.  
+Ожидание mismatch: заказ остаётся `created`, `outcome: amount_mismatch`.
+
+---
+
+## Эндпоинты Bank
+
+Bank **не** пишет ledger. Генерирует `event_id` и шлёт вебхук в Shop. Без `amount` в теле — берёт сумму из `GET /orders/{id}`.
+
+### Health
+
+- Метод: `GET`
+- URL: [http://localhost:8082/health](http://localhost:8082/health)
+
+```http
+GET http://localhost:8082/health
+```
+
+Ожидание: `200` / `Healthy`.
+
+---
+
+### Оплатить заказ
+
+- Метод: `POST`
+- URL: [http://localhost:8082/payments](http://localhost:8082/payments)
+- Header: `Content-Type: application/json`
+
+Тело (сумма с заказа):
+
+```json
+{
+  "orderId": "ord_…",
+  "status": "paid"
+}
+```
+
+S2:
+
+```json
+{
+  "orderId": "ord_…",
+  "status": "failed"
+}
+```
+
+S16 (явный чужой amount):
+
+```json
+{
+  "orderId": "ord_…",
+  "status": "paid",
+  "amount": 1,
+  "currency": "RUB"
+}
+```
+
+```http
+POST http://localhost:8082/payments
+Content-Type: application/json
+
+{
+  "orderId": "ord_…",
+  "status": "paid"
+}
+```
+
+Ожидание: `200`, в ответе `eventId`, Shop обработал вебхук.
+
+---
+
+## Минимальный ручной сценарий E1c
+
+1. `POST /orders` или Buyer `POST /purchases` → `orderId`, `created`.  
+2. [Health bank](http://localhost:8082/health) → 200.  
+3. `POST /payments` `{ orderId, status: "paid" }` → заказ `paid`.  
+4. SQL / лог: `bank_asset` = `escrow` = amount, payable = 0.  
+5. Другой заказ: `status: "failed"` → `payment_failed`, ledger пуст (S2).  
+6. Заказ `KEY-CS2-PRIME` + payment с `"amount": 1` → заказ не `paid` (S16).
+
+Логи:
 
 ```powershell
-docker compose -f deploy/docker-compose.yml logs -f buyer shop
+docker compose -f deploy/docker-compose.yml logs -f bank shop
 ```
 
 ---
 
 ## Позже
 
-Bank `:8082`, Seller A/B `:8083`/`:8084`, webhook, storm — появятся на E1c+. Этот файл дополним телами и ссылками.
+Seller A/B `:8083`/`:8084`, выдача, storm — с E1d+.

@@ -13,3 +13,6 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Logging:Logstash:Port", "1");
     }
 }
+
+[CollectionDefinition("ShopApi")]
+public sealed class ShopApiCollection : ICollectionFixture<ShopApiFactory>;

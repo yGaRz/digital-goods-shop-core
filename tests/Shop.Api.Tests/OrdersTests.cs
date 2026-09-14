@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace Shop.Api.Tests;
 
-public sealed class OrdersTests : IClassFixture<ShopApiFactory>
+[Collection("ShopApi")]
+public sealed class OrdersTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

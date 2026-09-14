@@ -21,6 +21,7 @@ docker compose -f deploy/docker-compose.yml up --build
 - Shop health: http://localhost:8080/health
 - Каталог: http://localhost:8080/products (12 SKU после E1a)
 - Заказ: `POST /orders` `{ "sku": "STEAM-TOPUP-500" }` → `created`
+- Оплата (E1c): Bank http://localhost:8082/payments → заказ `paid`, эскроу (без ключа)
 - PostgreSQL (DBeaver / локальный `dotnet run`): `localhost:5433`, БД/user/password `shop` (внутри compose сервис слушает `:5432`)
 - Kibana: http://localhost:5601 — Data View `shop-*`, фильтр `service: shop`
 - API docs (тела + ссылки): [Api docs/API DOCS.md](Api%20docs/API%20DOCS.md) — обновлять при смене эндпоинтов
